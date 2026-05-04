@@ -1,0 +1,10 @@
+{
+  "members": [
+    {
+      "displayName": "Alice Johnson",
+      "aliases": ["alice", "alice johnson"],
+      "jira": { "accountId": "YOUR_JIRA_ACCOUNT_ID" },
+      "github": { "username": "alice-github-handle" }
+    }
+  ]
+}
