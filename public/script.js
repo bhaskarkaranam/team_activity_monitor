@@ -49,7 +49,10 @@ async function sendMessage() {
     if (!res.ok) {
       const err = await res.json();
       hideTyping();
-      addMessage(err.error || 'Something went wrong. Please try again.', 'error');
+      const message = err.code === 'MEMBER_NOT_FOUND'
+        ? `I couldn't find "${err.memberName}" in our team list. Please check the name and try again.`
+        : err.error || 'Something went wrong. Please try again.';
+      addMessage(message, 'error');
       setInputEnabled(true);
       return;
     }

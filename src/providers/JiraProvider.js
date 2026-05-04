@@ -88,7 +88,7 @@ class JiraProvider extends ActivityProvider {
     logger.debug({ provider: 'jira', accountId }, 'Fetching JIRA activity');
 
     try {
-      const { data } = await this._client.get('/rest/api/3/search', {
+      const { data } = await this._client.get('/rest/api/3/search/jql', {
         params: {
           jql: `assignee=${accountId} AND statusCategory != Done ORDER BY updated DESC`,
           maxResults: 10,
@@ -110,6 +110,7 @@ class JiraProvider extends ActivityProvider {
         })),
       };
     } catch (err) {
+      logger.error({ provider: 'jira', accountId, status: err.response?.status, data: err.response?.data }, 'Error fetching JIRA details');
       if (err.response?.status === 401) throw new ProviderAuthError('jira', { accountId });
       if (err.code === 'ECONNABORTED') throw new ProviderNetworkError('jira', { accountId });
       throw err;

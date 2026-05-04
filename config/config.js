@@ -8,7 +8,11 @@ const required = (name) => {
 };
 
 module.exports = {
-  openai: { apiKey: required('OPENAI_API_KEY') },
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY ?? null,
+    baseUrl: process.env.OPENAI_BASE_URL ?? null,
+    model: process.env.OPENAI_MODEL ?? 'llama-3.3-70b-versatile',
+  },
   jira: {
     baseUrl: required('JIRA_BASE_URL'),
     authHeader: `Basic ${Buffer.from(

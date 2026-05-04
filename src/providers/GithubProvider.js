@@ -34,7 +34,9 @@ class GithubProvider extends ActivityProvider {
     const warnings = [];
     const extract = (result, label) => {
       if (result.status === 'fulfilled') return result.value;
-      warnings.push(`${label} fetch failed: ${result.reason?.message}`);
+      const reason = result.reason;
+      logger.warn({ provider: 'github', username, label, status: reason?.response?.status, err: reason?.message }, 'GitHub sub-fetch failed');
+      warnings.push(`${label} fetch failed: ${reason?.message}`);
       return null;
     };
 

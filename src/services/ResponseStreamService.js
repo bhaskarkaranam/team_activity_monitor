@@ -9,8 +9,8 @@ Summarize what a team member is working on using JIRA and GitHub data.
 - Do not invent information`;
 
 class ResponseStreamService {
-  constructor(openai) {
-    this._openai = openai;
+  constructor(aiAdapter) {
+    this._ai = aiAdapter;
   }
 
   async stream(res, { memberEntry, activityData, warnings, originalQuery }) {
@@ -22,28 +22,19 @@ class ResponseStreamService {
     const start = Date.now();
 
     try {
-      const stream = await this._openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        max_tokens: 1024,
-        stream: true,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: this._buildPrompt(memberEntry, activityData, originalQuery) },
-        ],
-      });
+      const userContent = this._buildPrompt(memberEntry, activityData, originalQuery);
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (delta) this._send(res, { type: 'delta', text: delta });
+      for await (const text of this._ai.streamText(SYSTEM_PROMPT, userContent)) {
+        this._send(res, { type: 'delta', text });
       }
 
       this._send(res, {
         type: 'done',
         sources: { jira: activityData.jira != null, github: activityData.github != null, warnings },
       });
-      logger.info({ member: memberEntry.displayName, durationMs: Date.now() - start }, 'SSE stream complete');
+      logger.info({ member: memberEntry?.displayName, durationMs: Date.now() - start }, 'SSE stream complete');
     } catch (err) {
-      logger.error({ err: err.message }, 'Stream error');
+      logger.error({ err: err.message, stack: err.stack, member: memberEntry?.displayName }, 'Stream error');
       this._send(res, { type: 'error', message: 'Failed to generate response. Please try again.' });
     } finally {
       res.end();

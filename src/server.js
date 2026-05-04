@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
-const { OpenAI } = require('openai');
-
 const config = require('../config/config');
 const logger = require('./logger');
 const TeamRepository = require('./repositories/TeamRepository');
@@ -13,19 +11,27 @@ const ActivityService = require('./services/ActivityService');
 const QueryParserService = require('./services/QueryParserService');
 const ResponseStreamService = require('./services/ResponseStreamService');
 const TeamSyncService = require('./services/TeamSyncService');
+const OpenAIAdapter = require('./services/ai/OpenAIAdapter');
 const chatRoutes = require('./routes/chat');
 
 const app = express();
 
-// --- Dependency wiring (all construction in one place) ---
-const openai = new OpenAI({ apiKey: config.openai.apiKey });
+// --- AI adapter ---
+if (!config.openai.apiKey) throw new Error('Missing required env var: OPENAI_API_KEY');
+const { OpenAI } = require('openai');
+const openaiOpts = { apiKey: config.openai.apiKey };
+if (config.openai.baseUrl) openaiOpts.baseURL = config.openai.baseUrl;
+logger.info({ baseURL: config.openai.baseUrl ?? 'openai' }, 'AI provider ready');
+const aiAdapter = new OpenAIAdapter(new OpenAI(openaiOpts), config.openai.model);
+
+// --- Dependency wiring ---
 const teamRepo = new TeamRepository(config.teamJsonPath);
 const activityService = new ActivityService([
   new JiraProvider(config.jira),
   new GithubProvider(config.github),
 ]);
-const queryParser = new QueryParserService(openai);
-const responseStreamer = new ResponseStreamService(openai);
+const queryParser = new QueryParserService(aiAdapter);
+const responseStreamer = new ResponseStreamService(aiAdapter);
 
 // --- Middleware ---
 app.use(cors());
@@ -52,7 +58,9 @@ app.use((err, req, res, next) => {
     log.warn({ errorCode: err.code, statusCode, context: err.context }, err.message);
   }
 
-  res.status(statusCode).json({ error: err.message, code: err.code ?? 'INTERNAL_ERROR' });
+  const body = { error: err.message, code: err.code ?? 'INTERNAL_ERROR' };
+  if (err.code === 'MEMBER_NOT_FOUND') body.memberName = err.context?.name;
+  res.status(statusCode).json(body);
 });
 
 async function bootstrap() {

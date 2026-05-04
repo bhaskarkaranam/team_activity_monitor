@@ -22,7 +22,7 @@ afterEach(() => nock.cleanAll());
 
 describe('JiraProvider.fetchActivity', () => {
   test('returns normalized issues on success', async () => {
-    nock(BASE_URL).get('/rest/api/3/search').query(true).reply(200, {
+    nock(BASE_URL).get('/rest/api/3/search/jql').query(true).reply(200, {
       total: 1,
       issues: [mockIssue()],
     });
@@ -41,7 +41,7 @@ describe('JiraProvider.fetchActivity', () => {
   });
 
   test('returns empty issues array when nothing is assigned', async () => {
-    nock(BASE_URL).get('/rest/api/3/search').query(true).reply(200, { total: 0, issues: [] });
+    nock(BASE_URL).get('/rest/api/3/search/jql').query(true).reply(200, { total: 0, issues: [] });
 
     const result = await provider.fetchActivity({ accountId: ACCOUNT_ID });
 
@@ -51,7 +51,7 @@ describe('JiraProvider.fetchActivity', () => {
   test('JQL contains accountId and statusCategory filter', async () => {
     let capturedParams;
     nock(BASE_URL)
-      .get('/rest/api/3/search')
+      .get('/rest/api/3/search/jql')
       .query((q) => { capturedParams = q; return true; })
       .reply(200, { total: 0, issues: [] });
 
@@ -62,14 +62,14 @@ describe('JiraProvider.fetchActivity', () => {
   });
 
   test('throws ProviderAuthError on 401', async () => {
-    nock(BASE_URL).get('/rest/api/3/search').query(true).reply(401);
+    nock(BASE_URL).get('/rest/api/3/search/jql').query(true).reply(401);
 
     await expect(provider.fetchActivity({ accountId: ACCOUNT_ID }))
       .rejects.toBeInstanceOf(ProviderAuthError);
   });
 
   test('ProviderAuthError carries correct code', async () => {
-    nock(BASE_URL).get('/rest/api/3/search').query(true).reply(401);
+    nock(BASE_URL).get('/rest/api/3/search/jql').query(true).reply(401);
 
     await expect(provider.fetchActivity({ accountId: ACCOUNT_ID }))
       .rejects.toMatchObject({ code: 'JIRA_AUTH_FAILED' });
@@ -78,7 +78,7 @@ describe('JiraProvider.fetchActivity', () => {
   test('falls back to "None" when priority field is missing', async () => {
     const issue = mockIssue();
     delete issue.fields.priority;
-    nock(BASE_URL).get('/rest/api/3/search').query(true).reply(200, { total: 1, issues: [issue] });
+    nock(BASE_URL).get('/rest/api/3/search/jql').query(true).reply(200, { total: 1, issues: [issue] });
 
     const result = await provider.fetchActivity({ accountId: ACCOUNT_ID });
 

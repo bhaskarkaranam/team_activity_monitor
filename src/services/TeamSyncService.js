@@ -24,7 +24,7 @@ class TeamSyncService {
   }
 
   async sync(githubOrg) {
-    logger.info('Starting team sync...');
+    logger.info({ githubOrg: githubOrg ?? null }, 'Starting team sync');
 
     const [jiraUsers, githubUsers] = await Promise.all([
       this._fetchJiraUsers(),
@@ -33,7 +33,8 @@ class TeamSyncService {
 
     logger.info({ jiraCount: jiraUsers.length, githubCount: githubUsers.length }, 'Fetched users from APIs');
 
-    const members = this._merge(jiraUsers, githubUsers);
+    const existingLinkages = this._loadExistingLinkages();
+    const members = this._merge(jiraUsers, githubUsers, existingLinkages);
     this._write(members);
 
     logger.info({ memberCount: members.length }, 'team.json updated');
@@ -88,37 +89,49 @@ class TeamSyncService {
       .filter(Boolean);
   }
 
-  _merge(jiraUsers, githubUsers) {
-    // Build a lookup map: email → github user (for fast matching)
+  _loadExistingLinkages() {
+    // Returns map of jira.accountId → github.username from current team.json
+    // Preserves manual linkages across re-syncs when email matching fails
+    try {
+      const { members } = JSON.parse(fs.readFileSync(this._teamJsonPath, 'utf8'));
+      const map = new Map();
+      for (const m of members) {
+        if (m.jira?.accountId && m.github?.username) {
+          map.set(m.jira.accountId, m.github.username);
+        }
+      }
+      return map;
+    } catch {
+      return new Map();
+    }
+  }
+
+  _merge(jiraUsers, githubUsers, existingLinkages) {
+    // Primary match: email (most reliable, fails when GitHub email is private)
     const githubByEmail = new Map(
       githubUsers.filter((u) => u.email).map((u) => [u.email, u])
-    );
-
-    // Build a lookup map: normalized name → github user (fallback)
-    const githubByName = new Map(
-      githubUsers.map((u) => [this._normalize(u.displayName), u])
     );
 
     const matched = new Set();
     const members = [];
 
     for (const jira of jiraUsers) {
-      const gh =
-        (jira.email && githubByEmail.get(jira.email)) ||
-        githubByName.get(this._normalize(jira.displayName)) ||
-        null;
+      const ghByEmail = jira.email ? githubByEmail.get(jira.email) : null;
+      const existingUsername = existingLinkages.get(jira.accountId);
 
-      if (gh) matched.add(gh.username);
+      const githubUsername = ghByEmail?.username ?? existingUsername ?? null;
+      if (ghByEmail) matched.add(ghByEmail.username);
+      if (!ghByEmail && existingUsername) matched.add(existingUsername);
 
       members.push({
         displayName: jira.displayName,
         aliases: this._buildAliases(jira.displayName),
         jira: { accountId: jira.accountId },
-        github: gh ? { username: gh.username } : null,
+        github: githubUsername ? { username: githubUsername } : null,
       });
     }
 
-    // Add GitHub-only members (not found in JIRA)
+    // Add GitHub-only members (not linked to any JIRA user)
     for (const gh of githubUsers) {
       if (!matched.has(gh.username)) {
         members.push({
@@ -141,9 +154,6 @@ class TeamSyncService {
     return [...new Set(aliases)];
   }
 
-  _normalize(name) {
-    return name.toLowerCase().replace(/\s+/g, ' ').trim();
-  }
 
   _write(members) {
     fs.writeFileSync(this._teamJsonPath, JSON.stringify({ members }, null, 2));

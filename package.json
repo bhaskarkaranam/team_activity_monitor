@@ -25,6 +25,8 @@
     "nodemon": "^3.0.0"
   },
   "nodemonConfig": {
-    "ignore": ["config/team.json"]
+    "ignore": [
+      "config/team.json"
+    ]
   }
 }
