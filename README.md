@@ -1,6 +1,6 @@
 # Team Activity Monitor
 
-A chatbot that answers questions about your team's work by pulling live data from JIRA and GitHub, then generating a conversational summary via OpenAI GPT-3.5.
+A chatbot that answers questions about your team's work by pulling live data from JIRA and GitHub, then generating a conversational summary via any OpenAI-compatible model (OpenAI, Groq, etc.).
 
 ---
 
@@ -15,6 +15,13 @@ npm install
 ```bash
 cp .env.example .env
 # Fill in your API keys in .env
+```
+
+The app works with any OpenAI-compatible provider. To use Groq (free tier), set:
+```
+OPENAI_API_KEY=gsk_...
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL=llama-3.3-70b-versatile
 ```
 
 **3. Run**
@@ -50,7 +57,8 @@ Server starts
       → GET /rest/api/3/users/search       (all active JIRA users)
       → GET /orgs/{org}/members            (GitHub org members, if GITHUB_ORG is set)
       → GET /users/{username}              (each member's GitHub profile for email)
-  → Matches JIRA users ↔ GitHub users by email, falls back to name
+  → Matches JIRA users ↔ GitHub users by email (primary)
+  → Falls back to existing manual linkages in team.json if email match fails
   → Writes config/team.json  { displayName, aliases, jira: { accountId }, github: { username } }
   → Server begins listening on port 3000
 ```
@@ -80,7 +88,7 @@ No response is sent yet. The server begins processing through three sequential p
 
 ### 3. Phase 1 — Intent and member identification via OpenAI
 
-The raw user message is sent to **GPT-3.5-turbo** using OpenAI's **function calling** (tool use) feature.
+The raw user message is sent to the configured model (set via `OPENAI_MODEL`) using OpenAI's **function calling** (tool use) feature.
 
 **Why function calling?** Natural language questions are unpredictable. "What's AJ been up to in payments?" needs to reliably extract `memberName: "aj"` and `intent: "jira_only"`. Function calling forces OpenAI to return a strict JSON schema rather than free text, so there's no string parsing on our side.
 
@@ -128,7 +136,7 @@ Which providers are called depends on the detected intent:
 
 | API | When called | What it returns |
 |---|---|---|
-| `GET /rest/api/3/search?jql=assignee={accountId} AND statusCategory != Done ORDER BY updated DESC&maxResults=10` | `general_activity`, `jira_only` | Active tickets with key, summary, status, priority, project, updatedAt |
+| `GET /rest/api/3/search/jql?jql=assignee={accountId} AND statusCategory != Done ORDER BY updated DESC&maxResults=10` | `general_activity`, `jira_only` | Active tickets with key, summary, status, priority, project, updatedAt |
 | `GET /rest/api/3/issue/{issueKey}?fields=summary,status,assignee,priority,updated` | `issue_detail` | Current state of a specific issue |
 | `GET /rest/api/3/issue/{issueKey}/changelog` | `issue_detail` | Field change history (status transitions, reassignments) |
 | `GET /rest/api/3/issue/{issueKey}/comment?orderBy=-created&maxResults=3` | `issue_detail` | Most recent 3 comments |
@@ -154,7 +162,7 @@ Provider failures are non-fatal. If JIRA returns a 401 or GitHub hits a rate lim
 
 ### 5. Phase 3 — Response construction and streaming
 
-Once the API data is in hand, `ResponseStreamService` builds a prompt and calls **GPT-3.5-turbo** with `stream: true`.
+Once the API data is in hand, `ResponseStreamService` builds a prompt and calls the configured model with `stream: true`.
 
 **System prompt:**
 ```
@@ -257,8 +265,8 @@ Currently uses a personal access token (PAT) sent as `Authorization: Bearer`. A 
 
 In production this should be replaced with a **GitHub App**. A GitHub App is installed at the org level, has fine-grained permissions per repository, and issues short-lived installation tokens (1 hour TTL) via `POST /app/installations/{id}/access_tokens`. If the token leaks it expires on its own, and access can be revoked at the org level without touching any personal account.
 
-**OpenAI**
-OpenAI has no OAuth option. The API key should be stored in a secrets manager (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault) and fetched at runtime rather than read from a `.env` file on disk. `config/config.js` would call the secrets manager SDK instead of `process.env`. Key rotation then happens in the secrets manager with no redeploy required.
+**AI provider (OpenAI / Groq / etc.)**
+These providers have no OAuth option. The API key (`OPENAI_API_KEY`) should be stored in a secrets manager (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault) and fetched at runtime rather than read from a `.env` file on disk. `config/config.js` would call the secrets manager SDK instead of `process.env`. Key rotation then happens in the secrets manager with no redeploy required.
 
 ---
 
